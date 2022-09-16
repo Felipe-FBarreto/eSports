@@ -1,47 +1,96 @@
 import express from "express";
-
-
-const booksByCategoty = [
-  {
-    categoty: "Riqueza",
-    books: [
-      {
-        title: "Os segredos da mente milionária",
-        author: "T. Harv Eker"
-      },
-      {
-        title:"O homem mais rico da Babilônia",
-        author: "George S. Clason"
-      },
-      {
-        title:"Pai rico, pai pobre",
-        author:"Robert T. Kiyosaki e Sharon L. Lechter"
-      }
-    ]
-  },
-  {
-    categoty: "Inteligência Emocional",
-    books: [
-      {
-        title: "Você é Insubstituível",
-        author: "Augusto Cury"
-      },
-      {
-        title:"Ansiedade - Como enfrentar o mal do século",
-        author: "Augusto Cury"
-      },
-      {
-        title:"Os 7 hábitos das pessoas altamente eficazes",
-        author:"Stephen R. Covey"
-      }
-    ]
-  }
-]
-
+import cors from 'cors'
+import { PrismaClient} from '@prisma/client'
+import { covertHourStringToMinutes } from "./utils/convert-hour-string-to-minutes";
+import { convertMinutesToHoursString } from "./utils/convert-minutes-to-hour-string";
 const app = express();
+app.use(express.json());
+app.use(cors());
+const prisma = new PrismaClient({
+  log:['query']
+})
 
-app.get('/ads', (req,res) =>{ // req = buscar as informações // res = mostras as informações
-  return res.json(booksByCategoty)
+app.get('/games',async (req, res) => {
+  const games =  await prisma.game.findMany({
+    include:{
+      _count:{
+        select:{
+          ads: true
+        }
+      }
+    }
+  })
+
+  return res.json(games);
+});
+
+app.post('/games/:id/ads',async (req, res) => {
+  const gameId = req.params.id;
+  const body: any = req.body;
+
+  const ad = await prisma.ad.create({
+    data:{
+      gameId,
+      name: body.name,
+      yearsPlaying: body.yearsPlaying,
+      discord: body.discord,
+      weekDays: body.weekDays.join(','),
+      hoursStart: covertHourStringToMinutes(body.hoursStart),
+      hoursEnd: covertHourStringToMinutes(body.hoursEnd),
+      useVoceChannel: body.useVoceChannel
+    }
+  })
+
+  return res.status(201).json(ad);
+});
+
+app.get('/games/:id/ads', async (req,res) =>{ // req = buscar as informações // res = mostras as informações
+  const gameId = req.params.id;
+
+  const ads = await prisma.ad.findMany({
+    select:{
+      id: true,
+      name: true,
+      weekDays: true,
+      useVoceChannel: true,
+      yearsPlaying: true,
+      hoursStart: true,
+      hoursEnd: true,
+    },
+    where:{
+      gameId,
+    },
+    orderBy:{
+      createdAt: "desc",
+    }
+  })
+
+  return res.json(ads.map((ad)=>{
+    return{
+      ...ad,
+      weekDays: ad.weekDays.split(","),
+      hoursStatus: convertMinutesToHoursString(ad.hoursStart),
+      hoursEnd: convertMinutesToHoursString(ad.hoursEnd)
+    }
+  }))
+} )
+
+
+app.get('/ads/:id/discord',async (req,res) =>{ // req = buscar as informações // res = mostras as informações
+  const adId = req.params.id;
+
+  const ad = await prisma.ad.findUniqueOrThrow({
+    select:{
+      discord: true,
+    },
+    where:{
+      id:adId
+    }
+  })
+
+  return res.json({
+    discord: ad.discord
+  })
 } )
 
 app.listen(3333)
